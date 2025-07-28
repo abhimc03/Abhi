@@ -1,0 +1,117 @@
+Project: CoAP-to-HTTP Proxy Simulation in GNS3
+🖥️ Required Setup
+GNS3 with 3 Ubuntu VMs (or containers)
+
+Python 3.7+
+
+Libraries: aiocoap, requests, flask
+
+🔧 Step 1: GNS3 Topology Setup
+🎛️ Create 3 Ubuntu VMs:
+VM Name	IP Address	Role
+coap-client	192.168.56.10	Sends CoAP request
+proxy-server	192.168.56.20	Converts CoAP to HTTP
+http-server	192.168.56.30	Receives HTTP request
+
+Connect all VMs to the same LAN segment in GNS3.
+
+📦 Step 2: Install Python and Required Packages
+Run this on all 3 VMs:
+
+bash
+Copy
+Edit
+sudo apt update
+sudo apt install python3-pip -y
+pip3 install flask aiocoap requests
+🟦 Step 3: HTTP Server (on http-server VM)
+http_server.py
+python
+Copy
+Edit
+from flask import Flask, jsonify
+
+app = Flask(__name__)
+
+@app.route('/api/temp')
+def get_temperature():
+    return jsonify({"temperature": "27°C", "status": "ok"})
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
+✅ Run the server:
+bash
+Copy
+Edit
+python3 http_server.py
+Test in browser:
+Go to http://192.168.56.30:5000/api/temp
+You should see JSON response.
+
+🟨 Step 4: CoAP-to-HTTP Proxy (on proxy-server VM)
+coap_http_proxy.py
+python
+Copy
+Edit
+import asyncio
+from aiocoap import resource, Message, Context
+import requests
+
+class CoAPtoHTTPResource(resource.Resource):
+    async def render_get(self, request):
+        print("Received CoAP request, forwarding to HTTP server...")
+        try:
+            # Make HTTP GET request
+            http_response = requests.get("http://192.168.56.30:5000/api/temp")
+            return Message(payload=http_response.text.encode("utf-8"))
+        except Exception as e:
+            return Message(payload=f"Error: {str(e)}".encode("utf-8"))
+
+async def main():
+    # Create CoAP Resource Tree
+    root = resource.Site()
+    root.add_resource(["sensor", "temp"], CoAPtoHTTPResource())
+
+    await Context.create_server_context(root)
+    print("CoAP-to-HTTP Proxy Server is running on coap://192.168.56.20/sensor/temp")
+    await asyncio.get_running_loop().create_future()
+
+if __name__ == "__main__":
+    asyncio.run(main())
+✅ Run the proxy:
+bash
+Copy
+Edit
+python3 coap_http_proxy.py
+🟩 Step 5: CoAP Client (on coap-client VM)
+coap_client.py
+python
+Copy
+Edit
+import asyncio
+from aiocoap import *
+
+async def main():
+    context = await Context.create_client_context()
+
+    request = Message(code=GET, uri='coap://192.168.56.20/sensor/temp')
+
+    try:
+        response = await context.request(request).response
+        print("Response from proxy server:", response.payload.decode('utf-8'))
+    except Exception as e:
+        print("Failed to fetch resource:")
+        print(e)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+✅ Run the client:
+bash
+Copy
+Edit
+python3 coap_client.py
+🧪 Output:
+css
+Copy
+Edit
+Response from proxy server: {"temperature": "27°C", "status": "ok"}
